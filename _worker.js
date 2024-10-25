@@ -189,7 +189,7 @@ export default {
         PROXY_HOSTNAME,
         PROXY_PORT,
         originHostname,
-        originPort
+        originPort,
         DEBUG
       );
       const contentType = newResponseHeaders.get("content-type") || "";

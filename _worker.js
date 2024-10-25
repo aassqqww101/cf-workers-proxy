@@ -6,15 +6,17 @@ function logError(request, message) {
   );
 }
 
-function createNewRequest(request, url, proxyHostname, originHostname) {
+function createNewRequest(request, url, proxyHostname, proxyPort, originHostname, originPort) {
   const newRequestHeaders = new Headers(request.headers);
+  const proxyUrl = proxyHostname+":"+proxyPort;
+  const originUrl = originHostname+":"+originPort;
   for (const [key, value] of newRequestHeaders) {
-    if (value.includes(originHostname)) {
+    if (value.includes(originUrl)) {
       newRequestHeaders.set(
         key,
         value.replace(
-          new RegExp(`(?<!\\.)\\b${originHostname}\\b`, "g"),
-          proxyHostname
+          new RegExp(`(?<!\\.)\\b${originUrl}\\b`, "g"),
+          proxyUrl
         )
       );
     }
@@ -29,17 +31,21 @@ function createNewRequest(request, url, proxyHostname, originHostname) {
 function setResponseHeaders(
   originalResponse,
   proxyHostname,
+  proxyPort,
   originHostname,
+  originPort,
   DEBUG
 ) {
   const newResponseHeaders = new Headers(originalResponse.headers);
+  const proxyUrl = proxyHostname+":"+proxyPort;
+  const originUrl = originHostname+":"+originPort;
   for (const [key, value] of newResponseHeaders) {
-    if (value.includes(proxyHostname)) {
+    if (value.includes(proxyUrl)) {
       newResponseHeaders.set(
         key,
         value.replace(
-          new RegExp(`(?<!\\.)\\b${proxyHostname}\\b`, "g"),
-          originHostname
+          new RegExp(`(?<!\\.)\\b${proxyUrl}\\b`, "g"),
+          originUrl
         )
       );
     }
@@ -61,20 +67,24 @@ function setResponseHeaders(
 async function replaceResponseText(
   originalResponse,
   proxyHostname,
+  proxyPort,
   pathnameRegex,
-  originHostname
+  originHostname,
+  originPort
 ) {
   let text = await originalResponse.text();
+  const proxyUrl = proxyHostname+":"+proxyPort;
+  const originUrl = originHostname+":"+originPort;
   if (pathnameRegex) {
     pathnameRegex = pathnameRegex.replace(/^\^/, "");
     return text.replace(
-      new RegExp(`((?<!\\.)\\b${proxyHostname}\\b)(${pathnameRegex})`, "g"),
-      `${originHostname}$2`
+      new RegExp(`((?<!\\.)\\b${proxyUrl}\\b)(${pathnameRegex})`, "g"),
+      `${originUrl}$2`
     );
   } else {
     return text.replace(
-      new RegExp(`(?<!\\.)\\b${proxyHostname}\\b`, "g"),
-      originHostname
+      new RegExp(`(?<!\\.)\\b${proxyUrl}\\b`, "g"),
+      originUrl
     );
   }
 }
@@ -110,6 +120,7 @@ export default {
     try {
       const {
         PROXY_HOSTNAME,
+        PROXY_PORT = 80,
         PROXY_PROTOCOL = "https",
         PATHNAME_REGEX,
         UA_WHITELIST_REGEX,
@@ -123,6 +134,7 @@ export default {
       } = env;
       const url = new URL(request.url);
       const originHostname = url.hostname;
+      const originPort = url.port;
       if (
         !PROXY_HOSTNAME ||
         (PATHNAME_REGEX && !new RegExp(PATHNAME_REGEX).test(url.pathname)) ||
@@ -161,18 +173,23 @@ export default {
             });
       }
       url.host = PROXY_HOSTNAME;
+      url.port = PROXY_PORT;
       url.protocol = PROXY_PROTOCOL;
       const newRequest = createNewRequest(
         request,
         url,
         PROXY_HOSTNAME,
-        originHostname
+        PROXY_PORT,
+        originHostname,
+        originPort
       );
       const originalResponse = await fetch(newRequest);
       const newResponseHeaders = setResponseHeaders(
         originalResponse,
         PROXY_HOSTNAME,
+        PROXY_PORT,
         originHostname,
+        originPort
         DEBUG
       );
       const contentType = newResponseHeaders.get("content-type") || "";
@@ -181,8 +198,10 @@ export default {
         body = await replaceResponseText(
           originalResponse,
           PROXY_HOSTNAME,
+          PROXY_PORT,
           PATHNAME_REGEX,
-          originHostname
+          originHostname,
+          originPort
         );
       } else {
         body = originalResponse.body;
